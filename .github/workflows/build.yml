@@ -12,25 +12,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Download project from GitHub
       - name: Checkout project
         uses: actions/checkout@v4
 
+      # 2. Install Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 3. Configure Android SDK
       - name: Setup Android SDK
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
           echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
 
+      # 4. Accept Android SDK licenses
       - name: Accept Android SDK Licenses
         run: |
           yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses || true
 
+      # 5. Install required Android SDK packages
       - name: Install Android SDK Packages
         run: |
           sdkmanager --sdk_root="$ANDROID_HOME" \
@@ -38,23 +43,59 @@ jobs:
             "platforms;android-34" \
             "build-tools;34.0.0"
 
+      # 6. Extract your original project
       - name: Extract Liquid Browser
         run: |
           unzip -q LiquidBrowser.zip -d .
 
+      # 7. Fix Kotlin setProgress naming conflict
+      - name: Fix Kotlin Progress Method
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          base = Path("LiquidBrowser/app/src/main/java/com/liquid/browser")
+
+          activity = base / "MainActivity.kt"
+          websetup = base / "WebSetup.kt"
+
+          a = activity.read_text()
+          w = websetup.read_text()
+
+          old = "fun setProgress(p: Int)"
+          new = "fun updatePageProgress(p: Int)"
+
+          if a.count(old) != 1:
+              raise SystemExit("Expected setProgress declaration not found exactly once")
+
+          if w.count("setProgress(") != 3:
+              raise SystemExit("Expected three setProgress calls in WebSetup.kt")
+
+          activity.write_text(a.replace(old, new))
+          websetup.write_text(
+              w.replace("setProgress(", "updatePageProgress(")
+          )
+
+          print("Kotlin progress method fixed successfully")
+          PY
+
+      # 8. Setup Gradle
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
+      # 9. Build Android APK
       - name: Build Debug APK
         run: |
           gradle --no-daemon -p LiquidBrowser assembleDebug
 
+      # 10. Upload generated APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: LiquidBrowser-APK
           path: LiquidBrowser/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
           
